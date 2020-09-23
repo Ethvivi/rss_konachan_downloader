@@ -10,8 +10,25 @@ import (
 )
 
 func main() {
+	dl := make(chan bool) //创建了信道 dl
 	dirname := "IMG"
 	temp_dir := "./IMG"
+	dir_check(dirname,temp_dir)
+
+	fmt.Println("___________________________________________download will go___________________________________________")
+
+	// 将main阻塞 直到其他协程结束完
+	go mutual_download("1d",dirname,dl)
+	dl <- true
+	go mutual_download("1w",dirname,dl)
+	dl <- true
+	go mutual_download("1m",dirname,dl)
+	dl <- true
+
+	fmt.Println("___________________________________________Finished___________________________________________")
+}
+
+func dir_check(dirname,temp_dir string)  {
 
 	_,err := os.Stat(temp_dir)
 	if err != nil{
@@ -23,23 +40,28 @@ func main() {
 	} else {
 		fmt.Println("dir has exist")
 	}
+}
 
-	resp, err := http.Get("https://rsshub.ioiox.com/konachan.net/post/popular_recent/1d")
+func mutual_download(day,dirname string, dl chan bool)  {
+
+	resp, err := http.Get("https://rsshub.ioiox.com/konachan.net/post/popular_recent/"+day)
 	if err != nil {
 		fmt.Printf("get failed, err:%v\n", err)
-		return
 	}
 	defer resp.Body.Close()
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Printf("read from resp.Body failed, err:%v\n", err)
-		return
 	}
+
 	re := regexp.MustCompile(`"https://.*?"`)
 	var link []string
-	link = re.FindAllString(string(body),-1)
-	//fmt.Println(link)
+	link = re.FindAllString(string(body),-1) //n=-1代表不限定次数 正数为代表限定次数
+
 	var imgurl string
+
+	//偶数位为图片的pixiv链接 跳过直接下载konachan原图链接
 	for i:=0; i<len(link); i++{
 		if i % 2 != 1 || i == 0 {
 			continue
@@ -56,7 +78,7 @@ func main() {
 
 			out, err := os.Create(dirname + "/" + imglink)
 			if err != nil {
-			panic(err)
+				panic(err)
 			}
 			defer out.Close()
 
@@ -68,4 +90,5 @@ func main() {
 
 
 	}
+	<- dl // 读取信道的数据
 }
