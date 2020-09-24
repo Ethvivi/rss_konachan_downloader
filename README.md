@@ -1,4 +1,4 @@
-# Goimg_download
+# konachan(rss) download
 download konachan.net img
 
 安装依赖包:
