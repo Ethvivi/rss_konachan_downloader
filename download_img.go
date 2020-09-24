@@ -1,12 +1,14 @@
 package main
 
 import (
-	"Regexp"
 	"fmt"
+	"github.com/schollz/progressbar"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"regexp"
+	"sync"
 )
 
 func main() {
@@ -17,16 +19,18 @@ func main() {
 
 	fmt.Println("___________________________________________download will go___________________________________________")
 
-	// 将main阻塞 直到其他协程结束完
-	go mutual_download("1d",dirname,dl)
-	dl <- true
-	go mutual_download("1w",dirname,dl)
-	dl <- true
-	go mutual_download("1m",dirname,dl)
-	dl <- true
+	var wg sync.WaitGroup
+	wg.Add(3)//创建3个协程任务池
+	// 将主协程阻塞 直到其他协程结束完
+	go mutual_download("1d",dirname,dl,&wg)
+	go mutual_download("1w",dirname,dl,&wg)
+	go mutual_download("1m",dirname,dl,&wg)
+	wg.Wait() //等待所有子协程释放
 
 	fmt.Println("___________________________________________Finished___________________________________________")
 }
+
+
 
 func dir_check(dirname,temp_dir string)  {
 
@@ -42,17 +46,19 @@ func dir_check(dirname,temp_dir string)  {
 	}
 }
 
-func mutual_download(day,dirname string, dl chan bool)  {
+func mutual_download(day,dirname string, dl chan bool , wg *sync.WaitGroup)  {
 
 	resp, err := http.Get("https://rsshub.ioiox.com/konachan.net/post/popular_recent/"+day)
 	if err != nil {
 		fmt.Printf("get failed, err:%v\n", err)
+		return
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Printf("read from resp.Body failed, err:%v\n", err)
+		return
 	}
 
 	re := regexp.MustCompile(`"https://.*?"`)
@@ -66,6 +72,7 @@ func mutual_download(day,dirname string, dl chan bool)  {
 		if i % 2 != 1 || i == 0 {
 			continue
 		} else {
+
 			imgurl = link[i]
 			fmt.Println(imgurl)
 			resp, err := http.Get(imgurl[1:len(imgurl)-1])
@@ -82,13 +89,17 @@ func mutual_download(day,dirname string, dl chan bool)  {
 			}
 			defer out.Close()
 
-			_, err = io.Copy(out, resp.Body)
+			bar := progressbar.DefaultBytes(
+				resp.ContentLength,
+				"downloading",
+			)
+
+			_, err = io.Copy(io.MultiWriter(out,bar), resp.Body)
 			if err != nil {
 				panic(err)
 			}
 		}
-
-
 	}
-	<- dl // 读取信道的数据
+	defer wg.Done() //协程任务递减
+	//<-dl // 读取信道的数据
 }
